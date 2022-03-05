@@ -142,8 +142,8 @@
 	//If you are running into low-level issues with corrupt messages and 
 	//the like, you can add $gateway->logIncomingMessages('path/to/incoming/messages/');
 	//and $gateway->logOutgoingMessages('path/to/outgoing/messages/'); here
-	//$gateway->logIncomingMessages('in/');
-	//$gateway->logOutgoingMessages('out/');
+	$gateway->logIncomingMessages('in/');
+	$gateway->logOutgoingMessages('out/');
 	
 	//Explicitly disable the native extension if it is installed
 	//$gateway->disableNativeExtension();

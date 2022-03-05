@@ -231,7 +231,7 @@ class users extends dbconnection
         $junk = addslashes($pack->junk);
         $newPass  = addslashes($pack->new_password);
 
-        if($junk != users::breakPassword($user_id)) return new returnData(0); //fail, but don't make it obvious
+        if($junk != users::breakPassword($user_id)) return new return_package(0); //fail, but don't make it obvious
 
         //if changing password, invalidate all keys
         $salt       = util::rand_string(64);
@@ -304,14 +304,14 @@ class users extends dbconnection
         if($pack->user_name)  $user = dbconnection::queryObject("SELECT * FROM users WHERE user_name = '{$pack->user_name}' LIMIT 1");
         else if($pack->email) $user = dbconnection::queryObject("SELECT * FROM users WHERE email = '{$pack->email}' LIMIT 1");
 
-        if(!$user) return new return_package(0);
+	if(!$user) return new return_package(1, 'user not found');
 
         $userId = $user->user_id;
         $username = $user->user_name;
         $email = $user->email;
         $junk = users::breakPassword($userId);
 
-        $url = "https://fielddaylab.wisc.edu/auth/index.html?i=$userId&j=$junk";
+        $url = "https://fieldday-web.wcer.wisc.edu/stemports/server/services/v2/resetpassword.html?i=$userId&j=$junk";
 
         //email it to them
         $subject = "Field Day Password Request";
@@ -326,7 +326,7 @@ class users extends dbconnection
         <br><br> Regards, <br>Field Day Lab";
 
         util::sendEmail($email, $subject, $body);
-        return new return_package(0);
+        return new return_package(0, $url);
     }
 }
 ?>
