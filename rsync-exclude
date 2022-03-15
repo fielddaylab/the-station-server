@@ -1,0 +1,5 @@
+config.class.php
+.DS_Store
+.gitignore
+.gitmodules
+.git
