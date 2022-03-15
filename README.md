@@ -4,8 +4,10 @@ The Station Server
 Requirements
 ------------
 
-* php 5.3
+* php 5.3+
 * mysql
+* mysql configured with SET GLOBAL sql_mode=(SELECT REPLACE(@@sql_mode,'ONLY_FULL_GROUP_BY',''));
+* Modules as seen in Vagrantfile
 
 Install
 -------
