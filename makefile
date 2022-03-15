@@ -1,10 +1,7 @@
-host="fieldday-deploy@fieldday-web.ad.education.wisc.edu"
-repo="/var/www/arisgames.org/server"
-upgrade_url="http://arisgames.org/server/json.php/v2.db.upgrade"
+.PHONY: deploy
 
 deploy:
-	@ssh -t $(host) cd $(repo) && git checkout master && git pull 1>/dev/null
+	rsync -vrc * root@thestationmaine.com:/var/www/thestationmaine/server
 
 upgrade:
-	@curl $(upgrade_url) --silent --data '{}' | tr -d '\r\n'
-
+   @curl http://thestationmaine.com/server/json.php/v2.db.upgrade --silent --data '{}' | tr -d '\r\n'
