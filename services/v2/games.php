@@ -24,6 +24,8 @@ class games extends dbconnection
         $url_result = games::isValidSiftrURL($pack);
         if ($url_result->returnCode != 0) return $url_result;
 
+        $pack->published = intval($pack->published);
+
         $game_name = $pack->name;
         $pack->game_id = dbconnection::queryInsert(
             "INSERT INTO games (".

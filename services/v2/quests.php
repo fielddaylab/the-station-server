@@ -26,6 +26,9 @@ class quests extends dbconnection
             $existing_quest_id = null;
         }
 
+
+        $pack->published = intval($pack->published); //Database stores this as a tiniint, but the call recieves a "TRUE" or "FALSE", needed for newer MySEL 
+
         $quest_id = dbconnection::queryInsert(
             "INSERT INTO quests (".
             "game_id,".
