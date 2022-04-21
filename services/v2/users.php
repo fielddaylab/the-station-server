@@ -304,7 +304,7 @@ class users extends dbconnection
         if($pack->user_name)  $user = dbconnection::queryObject("SELECT * FROM users WHERE user_name = '{$pack->user_name}' LIMIT 1");
         else if($pack->email) $user = dbconnection::queryObject("SELECT * FROM users WHERE email = '{$pack->email}' LIMIT 1");
 
-        if(!$user) return new return_package(0);
+	if(!$user) return new return_package(1, 'user not found');
 
         $userId = $user->user_id;
         $username = $user->user_name;
@@ -326,7 +326,7 @@ class users extends dbconnection
         <br><br> Regards, <br>Field Day Lab";
 
         util::sendEmail($email, $subject, $body);
-        return new return_package(0);
+        return new return_package(0, $url);
     }
 }
 ?>

@@ -145,6 +145,7 @@ class triggers extends dbconnection
         $trigger->beacon_uuid                 = $sql_trigger->beacon_uuid;
         $trigger->beacon_major                = $sql_trigger->beacon_major;
         $trigger->beacon_minor                = $sql_trigger->beacon_minor;
+        $trigger->cluster_id                  = $sql_trigger->cluster_id;
 
         return $trigger;
     }
@@ -222,6 +223,147 @@ class triggers extends dbconnection
         }
 
         games::bumpGameVersion($pack);
+        return new return_package(0);
+    }
+
+    private static function distanceMeters($lat1, $lng1, $lat2, $lng2)
+    {
+        // https://stackoverflow.com/a/837957/509936
+        $earthRadius = 6371000; //meters
+        $dLat = deg2rad($lat2 - $lat1);
+        $dLng = deg2rad($lng2 - $lng1);
+        $a = sin($dLat / 2) * sin($dLat / 2) +
+            cos(deg2rad($lat1)) * cos(deg2rad($lat2)) *
+            sin($dLng / 2) * sin($dLng / 2);
+        $c = 2 * atan2(sqrt($a), sqrt(1 - $a));
+        $dist = $earthRadius * $c;
+        return $dist;
+    }
+
+    private static function cluster($markers, $distance) {
+        $clustered = array();
+        /* Loop until all markers have been compared. */
+        while (count($markers)) {
+            $marker  = array_pop($markers);
+            $cluster = array();
+            /* Compare against all markers which are left. */
+            foreach ($markers as $key => $target) {
+                $meters = triggers::distanceMeters($marker->latitude, $marker->longitude,
+                                        $target->latitude, $target->longitude);
+                /* If two markers are closer than given distance remove */
+                /* target marker from array and add it to cluster.      */
+                if ($distance > $meters) {
+                    unset($markers[$key]);
+                    $cluster[] = $target;
+                }
+            }
+
+            /* If a marker has been added to cluster, add also the one  */
+            /* we were comparing to and remove the original from array. */
+            if (count($cluster) > 0) {
+                $cluster[] = $marker;
+                $clustered[] = $cluster;
+            } else {
+                $clustered[] = $marker;
+            }
+        }
+        return $clustered;
+    }
+
+    public static function assignClusters($pack)
+    {
+        $game_id = intval($pack->game_id);
+
+        $factories = dbconnection::queryArray("SELECT * FROM factories WHERE game_id = '{$pack->game_id}' AND location_bound_type = 'CLUSTER'");
+
+        foreach ($factories as $fac) {
+            $radius = intval($fac->cluster_radius); // in meters
+            $threshold = intval($fac->cluster_threshold); // how many needed for a cluster
+            $object_type_cond = '';
+            if ($fac->cluster_instance_type) {
+                $object_type_cond = "AND instances.object_type = '" . addslashes($fac->cluster_instance_type) . "'";
+            }
+            $object_id_cond = '';
+            if ($fac->cluster_instance_id) {
+                $object_id_cond = "AND instances.object_id = " . intval($fac->cluster_instance_id);
+            }
+            $cluster_type = addslashes($fac->object_type);
+            $cluster_id = intval($fac->object_id);
+
+            $sql_triggers = dbconnection::queryArray(
+                "SELECT triggers.*
+                FROM triggers
+                JOIN instances ON triggers.instance_id = instances.instance_id
+                WHERE triggers.game_id = {$game_id}
+                AND (triggers.cluster_id = 0 OR triggers.cluster_id IS NULL)
+                {$object_type_cond}
+                {$object_id_cond}
+                "
+            );
+
+            $sql_clusters = dbconnection::queryArray(
+                "SELECT triggers.*
+                FROM triggers
+                JOIN instances ON triggers.instance_id = instances.instance_id
+                WHERE triggers.game_id = {$game_id}
+                AND instances.object_type = '{$cluster_type}'
+                AND instances.object_id = {$cluster_id}
+                "
+            );
+
+            $assigned = array();
+            $unassigned = array();
+            foreach ($sql_triggers as $trigger) {
+                $add_to_cluster = null;
+                foreach ($sql_clusters as $cluster) {
+                    $meters = triggers::distanceMeters($trigger->latitude, $trigger->longitude, $cluster->latitude, $cluster->longitude);
+                    if ($meters < $radius) {
+                        $add_to_cluster = $cluster;
+                        break;
+                    }
+                }
+                if (!is_null($add_to_cluster)) {
+                    $assigned[] = [
+                        'trigger' => $trigger,
+                        'cluster' => $add_to_cluster,
+                    ];
+                } else {
+                    $unassigned[] = $trigger;
+                }
+            }
+
+            foreach ($assigned as $assignment) {
+                $element_trigger_id = intval($assignment['trigger']->trigger_id);
+                $cluster_trigger_id = intval($assignment['cluster']->trigger_id);
+                dbconnection::query("
+                    UPDATE triggers
+                    SET cluster_id = $cluster_trigger_id
+                    WHERE trigger_id = $element_trigger_id;
+                ");
+            }
+
+            $new_clusters = triggers::cluster($unassigned, $radius);
+            foreach ($new_clusters as $cluster) {
+                if (count($cluster) < $threshold) {
+                    continue;
+                }
+                $lat = $cluster[count($cluster) - 1]->latitude;
+                $lon = $cluster[count($cluster) - 1]->longitude;
+                $cluster_instance_id = dbconnection::queryInsert("INSERT INTO instances (game_id, object_id, object_type, qty, infinite_qty, factory_id, created) VALUES ('{$game_id}', '{$fac->object_id}', '{$fac->object_type}', '1', '0', '{$fac->factory_id}', CURRENT_TIMESTAMP)");
+                $cluster_trigger_id = dbconnection::queryInsert("INSERT INTO triggers (game_id, instance_id, scene_id, requirement_root_package_id, type, name, title, latitude, longitude, distance, infinite_distance, wiggle, show_title, hidden, trigger_on_enter, icon_media_id, created) VALUES ('{$game_id}', '{$cluster_instance_id}', {$fac->trigger_scene_id}, '{$fac->trigger_requirement_root_package_id}', 'LOCATION', '{$fac->trigger_title}', '{$fac->trigger_title}', '{$lat}', '{$lon}', '{$fac->trigger_distance}', '{$fac->trigger_infinite_distance}', '{$fac->trigger_wiggle}', '{$fac->trigger_show_title}', '{$fac->trigger_hidden}', '{$fac->trigger_on_enter}', '{$fac->trigger_icon_media_id}', CURRENT_TIMESTAMP);");
+                $element_ids = [];
+                foreach ($cluster as $element) {
+                    $element_ids[] = $element->trigger_id;
+                }
+                $element_ids = '(' . implode(',', $element_ids) . ')';
+                dbconnection::query("
+                    UPDATE triggers
+                    SET cluster_id = $cluster_trigger_id
+                    WHERE trigger_id IN $element_ids;
+                ");
+            }
+        }
+
         return new return_package(0);
     }
 }

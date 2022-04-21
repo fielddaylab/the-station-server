@@ -5,6 +5,7 @@ require_once("util.php");
 require_once("editors.php");
 require_once("media.php");
 require_once("scenes.php");
+require_once("quests.php");
 require_once("return_package.php");
 
 class games extends dbconnection
@@ -22,6 +23,8 @@ class games extends dbconnection
         }
         $url_result = games::isValidSiftrURL($pack);
         if ($url_result->returnCode != 0) return $url_result;
+
+        $pack->published = intval($pack->published);
 
         $game_name = $pack->name;
         $pack->game_id = dbconnection::queryInsert(
@@ -441,6 +444,30 @@ Field Day Lab</p>";
         }
     }
 
+    public static function getAllStemportsStations($pack)
+    {
+        $pack->auth->permission = "read_write";
+        if(!users::authenticateUser($pack->auth)) return new return_package(6, NULL, "Failed Authentication");
+        $user_id = intval($pack->auth->user_id);
+
+        $q = "SELECT games.* FROM games
+            LEFT JOIN user_games ON (games.game_id = user_games.game_id AND user_games.user_id = {$user_id})
+            WHERE games.published = 1
+            OR user_games.user_id IS NOT NULL
+        ";
+        $sql_games = dbconnection::queryArray($q);
+        $games = array();
+        foreach ($sql_games as $sql_game) {
+            $game = games::gameObjectFromSQL($sql_game);
+            $sql_game->auth = $pack->auth; // so you can see your own private quests
+            $quests = quests::getQuestsForGame($sql_game)->data;
+            $game->quests = $quests;
+            $games[] = $game;
+        }
+
+        return new return_package(0, $games);
+    }
+
     public static function searchSiftrs($pack)
     {
         $siftr_url = isset($pack->siftr_url) ? addslashes($pack->siftr_url) : null;
@@ -534,7 +561,10 @@ Field Day Lab</p>";
         if(!users::authenticateUser($pack->auth)) return new return_package(6, NULL, "Failed Authentication");
 
         $user_id = intval($pack->auth->user_id);
-        if (isset($pack->order) && $pack->order === 'recent') {
+        if ($user_id === 75) {
+            // stemports master editor account
+            $sql_games = dbconnection::queryArray("SELECT * FROM games");
+        } else if (isset($pack->order) && $pack->order === 'recent') {
             $sql_games = dbconnection::queryArray("SELECT games.* FROM user_games LEFT JOIN games ON user_games.game_id = games.game_id LEFT JOIN notes ON games.game_id = notes.game_id AND notes.user_id = '{$user_id}' LEFT JOIN user_log ON user_log.user_id = '{$user_id}' AND games.game_id = user_log.game_id AND user_log.event_type = 'MOVE' WHERE user_games.user_id = '{$user_id}' AND games.game_id IS NOT NULL GROUP BY games.game_id ORDER BY GREATEST(IFNULL(notes.last_active, FROM_UNIXTIME(0)), IFNULL(user_log.created, FROM_UNIXTIME(0))) DESC");
         } else {
             $sql_games = dbconnection::queryArray("SELECT * FROM user_games LEFT JOIN games ON user_games.game_id = games.game_id WHERE user_games.user_id = '{$user_id}' AND games.game_id IS NOT NULL");
